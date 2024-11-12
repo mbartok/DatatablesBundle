@@ -382,9 +382,9 @@ abstract class AbstractColumn implements ColumnInterface
     /**
      * {@inheritdoc}
      */
-    public function isAssociation()
+    public function isAssociation(): bool
     {
-        return false === strstr($this->dql, '.') ? false : true;
+        return (str_contains((string)$this->dql, '.'));
     }
 
     /**
