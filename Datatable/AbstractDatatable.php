@@ -1,6 +1,6 @@
 <?php
 
-/**
+/*
  * This file is part of the SgDatatablesBundle package.
  *
  * (c) stwe <https://github.com/stwe/DatatablesBundle>
@@ -11,23 +11,18 @@
 
 namespace Sg\DatatablesBundle\Datatable;
 
+use Doctrine\ORM\EntityManagerInterface;
+use LogicException;
 use Sg\DatatablesBundle\Datatable\Column\ColumnBuilder;
-
-use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
-use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
-use Symfony\Component\Translation\TranslatorInterface;
-use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyAccess\PropertyAccessor;
-use Doctrine\ORM\EntityManagerInterface;
-use Twig_Environment;
-use Exception;
+use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Component\Translation\TranslatorInterface as LegacyTranslatorInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
+use Twig\Environment;
 
-/**
- * Class AbstractDatatable
- *
- * @package Sg\DatatablesBundle\Datatable
- */
 abstract class AbstractDatatable implements DatatableInterface
 {
     /**
@@ -68,7 +63,7 @@ abstract class AbstractDatatable implements DatatableInterface
     /**
      * The Twig Environment.
      *
-     * @var Twig_Environment
+     * @var Environment
      */
     protected $twig;
 
@@ -129,11 +124,11 @@ abstract class AbstractDatatable implements DatatableInterface
     protected $language;
 
     /**
-     * The unique name for this instance.
+     * The unique id for this instance.
      *
-     * @var string
+     * @var int
      */
-    protected $uniqueName;
+    protected $uniqueId;
 
     /**
      * The PropertyAccessor.
@@ -143,41 +138,46 @@ abstract class AbstractDatatable implements DatatableInterface
     protected $accessor;
 
     //-------------------------------------------------
-    // Ctor.
-    //-------------------------------------------------
 
     /**
-     * AbstractDatatable constructor.
+     * Used to generate unique names.
      *
-     * @param AuthorizationCheckerInterface $authorizationChecker
-     * @param TokenStorageInterface         $securityToken
-     * @param TranslatorInterface           $translator
-     * @param RouterInterface               $router
-     * @param EntityManagerInterface        $em
-     * @param Twig_Environment              $twig
-     *
-     * @throws Exception
+     * @var array
+     */
+    protected static $uniqueCounter = [];
+
+    /**
+     * @throws LogicException
      */
     public function __construct(
         AuthorizationCheckerInterface $authorizationChecker,
         TokenStorageInterface $securityToken,
-        TranslatorInterface $translator,
+        $translator,
         RouterInterface $router,
         EntityManagerInterface $em,
-        Twig_Environment $twig
+        Environment $twig
     ) {
         $this->validateName();
-        $this->uniqueName = uniqid($this->getName().'-');
+
+        if (isset(self::$uniqueCounter[$this->getName()])) {
+            $this->uniqueId = ++self::$uniqueCounter[$this->getName()];
+        } else {
+            $this->uniqueId = self::$uniqueCounter[$this->getName()] = 1;
+        }
 
         $this->authorizationChecker = $authorizationChecker;
         $this->securityToken = $securityToken;
+
+        if (! ($translator instanceof LegacyTranslatorInterface) && ! ($translator instanceof TranslatorInterface)) {
+            throw new \InvalidArgumentException(sprintf('The $translator argument of %s must be an instance of %s or %s, a %s was given.', static::class, LegacyTranslatorInterface::class, TranslatorInterface::class, \get_class($translator)));
+        }
         $this->translator = $translator;
         $this->router = $router;
         $this->em = $em;
         $this->twig = $twig;
 
         $metadata = $em->getClassMetadata($this->getEntity());
-        $this->columnBuilder = new ColumnBuilder($metadata, $twig, $this->getName(), $em);
+        $this->columnBuilder = new ColumnBuilder($metadata, $twig, $router, $this->getName(), $em);
 
         $this->ajax = new Ajax();
         $this->options = new Options();
@@ -279,7 +279,7 @@ abstract class AbstractDatatable implements DatatableInterface
      */
     public function getOptionsArrayFromEntities($entities, $keyFrom = 'id', $valueFrom = 'name')
     {
-        $options = array();
+        $options = [];
 
         foreach ($entities as $entity) {
             if (true === $this->accessor->isReadable($entity, $keyFrom) && true === $this->accessor->isReadable($entity, $valueFrom)) {
@@ -293,9 +293,17 @@ abstract class AbstractDatatable implements DatatableInterface
     /**
      * {@inheritdoc}
      */
+    public function getUniqueId()
+    {
+        return $this->uniqueId;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function getUniqueName()
     {
-        return $this->uniqueName;
+        return $this->getName().($this->getUniqueId() > 1 ? '-'.$this->getUniqueId() : '');
     }
 
     //-------------------------------------------------
@@ -305,12 +313,13 @@ abstract class AbstractDatatable implements DatatableInterface
     /**
      * Checks the name only contains letters, numbers, underscores or dashes.
      *
-     * @throws Exception
+     * @throws LogicException
      */
     private function validateName()
     {
-        if (1 !== preg_match(self::NAME_REGEX, $this->getName())) {
-            throw new Exception('AbstractDatatable::validateName(): The result of the getName method can only contain letters, numbers, underscore and dashes.');
+        $name = $this->getName();
+        if (1 !== preg_match(self::NAME_REGEX, $name)) {
+            throw new LogicException(sprintf('AbstractDatatable::validateName(): "%s" is invalid Datatable Name. Name can only contain letters, numbers, underscore and dashes.', $name));
         }
     }
 }
