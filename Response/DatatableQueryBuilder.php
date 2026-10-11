@@ -488,7 +488,7 @@ class DatatableQueryBuilder
     {
         foreach ($this->selectColumns as $tableName => $tableFields) {
             if (empty($tableName) === false) {
-                $qb->addSelect($tableName);
+                $qb->addSelect("partial $tableName.{" . implode(', ', $tableFields) . "}");
             } else {
                 $qb->addSelect($tableFields);
             }
